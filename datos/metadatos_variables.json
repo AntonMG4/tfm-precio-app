@@ -1,0 +1,95 @@
+[
+  {
+    "variable": "city",
+    "tipo": "categorica",
+    "niveles": ["Bangkok", "Cape Town", "Hong Kong", "Istanbul", "Mexico City", "New York", "Paris", "Rio de Janeiro", "Rome", "Sydney"]
+  },
+  {
+    "variable": "room_type",
+    "tipo": "categorica",
+    "niveles": ["Entire place", "Hotel room", "Private room", "Shared room"]
+  },
+  {
+    "variable": "bedrooms",
+    "tipo": "numerica",
+    "min": 1,
+    "max": 50,
+    "mediana": 1
+  },
+  {
+    "variable": "accommodates",
+    "tipo": "numerica",
+    "min": 1,
+    "max": 16,
+    "mediana": 2
+  },
+  {
+    "variable": "host_total_listings_count",
+    "tipo": "numerica",
+    "min": 0,
+    "max": 7235,
+    "mediana": 1
+  },
+  {
+    "variable": "longitude",
+    "tipo": "numerica",
+    "min": -99.3396,
+    "max": 151.3398,
+    "mediana": 2.3825
+  },
+  {
+    "variable": "latitude",
+    "tipo": "numerica",
+    "min": -34.2644,
+    "max": 48.9049,
+    "mediana": 40.7128
+  },
+  {
+    "variable": "has_ac",
+    "tipo": "logica",
+    "niveles": [true, false]
+  },
+  {
+    "variable": "minimum_nights",
+    "tipo": "numerica",
+    "min": 1,
+    "max": 9999,
+    "mediana": 2
+  },
+  {
+    "variable": "has_response_rate",
+    "tipo": "logica",
+    "niveles": [true, false]
+  },
+  {
+    "variable": "n_amenities",
+    "tipo": "numerica",
+    "min": 0,
+    "max": 89,
+    "mediana": 18
+  },
+  {
+    "variable": "has_acceptance_rate",
+    "tipo": "logica",
+    "niveles": [true, false]
+  },
+  {
+    "variable": "reviews_por_mes_activo",
+    "tipo": "numerica",
+    "min": 0,
+    "max": 42.3333,
+    "mediana": 0.6709
+  },
+  {
+    "variable": "has_dishwasher",
+    "tipo": "logica",
+    "niveles": [true, false]
+  },
+  {
+    "variable": "total_reviews",
+    "tipo": "numerica",
+    "min": 0,
+    "max": 891,
+    "mediana": 3
+  }
+]

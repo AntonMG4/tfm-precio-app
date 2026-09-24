@@ -1,0 +1,4 @@
+{
+  "cols_shap": ["city.Cape Town", "city.Hong Kong", "city.Istanbul", "city.Mexico City", "city.New York", "city.Paris", "city.Rio de Janeiro", "city.Rome", "city.Sydney", "room_type.Hotel room", "room_type.Private room", "room_type.Shared room", "bedrooms", "accommodates", "host_total_listings_count", "longitude", "latitude", "has_acTRUE", "minimum_nights", "has_response_rateTRUE", "n_amenities", "has_acceptance_rateTRUE", "reviews_por_mes_activo", "has_dishwasherTRUE", "total_reviews"],
+  "vars_modelo": ["city", "room_type", "bedrooms", "accommodates", "host_total_listings_count", "longitude", "latitude", "has_ac", "minimum_nights", "has_response_rate", "n_amenities", "has_acceptance_rate", "reviews_por_mes_activo", "has_dishwasher", "total_reviews"]
+}
