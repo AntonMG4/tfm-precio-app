@@ -10,6 +10,21 @@ import plotly.graph_objects as go
 from src.modelo import ModeloPrecio
 from src import formulario, mapa
 
+# El tier gratuito de HuggingFace Spaces (ZeroGPU) exige que exista alguna
+# función decorada con @spaces.GPU al arrancar, o rechaza el Space entero —
+# aunque la app no necesite GPU en absoluto (XGBoost corre en CPU). Esta
+# función no se usa nunca, solo existe para pasar esa comprobación de arranque.
+# En local no está instalado el paquete `spaces` (es específico de Spaces),
+# así que el import se protege con try/except.
+try:
+    import spaces
+
+    @spaces.GPU(duration=1)
+    def _zerogpu_dummy():
+        return None
+except ImportError:
+    pass
+
 # --- Carga de todo lo necesario (una sola vez al arrancar la app) ---
 modelo = ModeloPrecio()
 metadatos = formulario.cargar_metadatos()
