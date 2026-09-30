@@ -141,17 +141,27 @@ def construir_grafico_explicacion(explicacion: dict, top: int = 6) -> go.Figure:
     filas = _filas_explicacion(explicacion["detalle"])
     principales, resto = filas[:top], filas[top:]
 
+    def pct(l):
+        return (np.exp(l) - 1) * 100
+
     etiquetas = [e for e, _ in principales]
-    efectos = [(np.exp(l) - 1) * 100 for _, l in principales]
+    efectos = [pct(l) for _, l in principales]
+    # Texto al pasar el ratón: cada barra muestra su efecto; la de "resto"
+    # muestra además el desglose de las características que agrupa
+    detalles = [f"<b>{e}</b> ({pct(l):+.1f}%)" for e, l in principales]
     if resto:
+        efecto_resto = pct(sum(l for _, l in resto))
         etiquetas.append("Resto de características")
-        efectos.append((np.exp(sum(l for _, l in resto)) - 1) * 100)
+        efectos.append(efecto_resto)
+        desglose = "<br>".join(f"{e} ({pct(l):+.1f}%)" for e, l in resto)
+        detalles.append(f"<b>Resto de características ({efecto_resto:+.1f}%)</b><br>{desglose}")
 
     # De menor a mayor efecto absoluto: Plotly pinta de abajo arriba,
     # así la barra más importante queda arriba
     orden = sorted(range(len(efectos)), key=lambda i: abs(efectos[i]))
     etiquetas = [etiquetas[i] for i in orden]
     efectos = [efectos[i] for i in orden]
+    detalles = [detalles[i] for i in orden]
     colores = [VERDE if e > 0 else ROJO for e in efectos]
 
     # Margen en el eje x para que las etiquetas de % no se corten
@@ -165,7 +175,8 @@ def construir_grafico_explicacion(explicacion: dict, top: int = 6) -> go.Figure:
         text=[f"{e:+.0f}%" for e in efectos],
         textposition="outside",
         cliponaxis=False,
-        hovertemplate="%{y}: %{x:+.1f}%<extra></extra>",
+        hovertext=detalles,
+        hovertemplate="%{hovertext}<extra></extra>",
     ))
     fig.add_vline(x=0, line_color="rgba(200,200,200,0.35)", line_width=1)
     fig.update_layout(
