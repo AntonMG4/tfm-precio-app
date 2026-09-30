@@ -78,30 +78,93 @@ CSS = f"""
 """
 
 
+# Nombres cortos para el gráfico explicativo (el formulario usa los largos)
+ETIQUETAS_GRAFICO = {
+    "city": "Ciudad",
+    "room_type": "Tipo",
+    "bedrooms": "Habitaciones",
+    "accommodates": "Huéspedes",
+    "n_amenities": "Comodidades",
+    "has_ac": "Aire acond.",
+    "has_dishwasher": "Lavavajillas",
+    "minimum_nights": "Estancia mín.",
+    "host_total_listings_count": "Anuncios del anfitrión",
+    "has_response_rate": "Tasa de respuesta",
+    "has_acceptance_rate": "Tasa de aceptación",
+}
+
+TIPOS_ALOJAMIENTO = {
+    "Entire place": "Vivienda completa",
+    "Private room": "Hab. privada",
+    "Shared room": "Hab. compartida",
+    "Hotel room": "Hab. de hotel",
+}
+
+# Variables que se agrupan en una sola barra del gráfico
+GRUPOS_GRAFICO = {
+    "Ubicación": ["latitude", "longitude"],
+    "Anuncio sin reseñas": ["total_reviews", "reviews_por_mes_activo"],
+}
+
+VERDE = "#43A047"
+ROJO = "#E53935"
+
+
+def _formatear_valor(var, valor):
+    if isinstance(valor, (bool, np.bool_)):
+        return "sí" if valor else "no"
+    if var == "room_type":
+        return TIPOS_ALOJAMIENTO.get(valor, valor)
+    if isinstance(valor, (int, float, np.integer, np.floating)):
+        v = float(valor)
+        return f"{int(v)}" if v.is_integer() else f"{v:.1f}"
+    return str(valor)
+
+
+def _filas_explicacion(detalle):
+    """Convierte el detalle por variable en filas (etiqueta, efecto_log),
+    agrupando las variables de GRUPOS_GRAFICO en una sola fila."""
+    en_grupo = {v: g for g, vs in GRUPOS_GRAFICO.items() for v in vs}
+    filas, acumulado = [], {g: 0.0 for g in GRUPOS_GRAFICO}
+    for f in detalle.itertuples():
+        if f.variable in en_grupo:
+            acumulado[en_grupo[f.variable]] += f.efecto_log
+        else:
+            nombre = ETIQUETAS_GRAFICO.get(f.variable, f.variable)
+            filas.append((f"{nombre}: {_formatear_valor(f.variable, f.valor)}", f.efecto_log))
+    filas += list(acumulado.items())
+    return sorted(filas, key=lambda x: abs(x[1]), reverse=True)
+
+
 def construir_grafico_explicacion(explicacion: dict, top: int = 6) -> go.Figure:
     """Equivalente interactivo (Plotly) de grafico_explicacion() (10.5)."""
-    detalle = explicacion["detalle"]
-    principales = detalle.iloc[:top]
-    resto = detalle.iloc[top:]
+    filas = _filas_explicacion(explicacion["detalle"])
+    principales, resto = filas[:top], filas[top:]
 
-    etiquetas = [f"{f.variable} = {f.valor}" for f in principales.itertuples()]
-    efectos = list(principales["efecto_pct"])
+    etiquetas = [e for e, _ in principales]
+    efectos = [(np.exp(l) - 1) * 100 for _, l in principales]
+    if resto:
+        etiquetas.append("Resto de características")
+        efectos.append((np.exp(sum(l for _, l in resto)) - 1) * 100)
 
-    if len(resto) > 0:
-        efecto_log_resto = resto["efecto_log"].sum()
-        etiquetas.append("resto de variables")
-        efectos.append((np.exp(efecto_log_resto) - 1) * 100)
-
+    # De menor a mayor efecto absoluto: Plotly pinta de abajo arriba,
+    # así la barra más importante queda arriba
     orden = sorted(range(len(efectos)), key=lambda i: abs(efectos[i]))
     etiquetas = [etiquetas[i] for i in orden]
     efectos = [efectos[i] for i in orden]
-    colores = ["#5B9BD5" if e > 0 else "#E06666" for e in efectos]
+    colores = [VERDE if e > 0 else ROJO for e in efectos]
+
+    # Margen en el eje x para que las etiquetas de % no se corten
+    m = max(abs(e) for e in efectos) or 1
+    x_min = min(min(efectos), 0) - 0.35 * m
+    x_max = max(max(efectos), 0) + 0.35 * m
 
     fig = go.Figure(go.Bar(
         x=efectos, y=etiquetas, orientation="h",
         marker_color=colores,
         text=[f"{e:+.0f}%" for e in efectos],
         textposition="outside",
+        cliponaxis=False,
         hovertemplate="%{y}: %{x:+.1f}%<extra></extra>",
     ))
     fig.add_vline(x=0, line_color="rgba(200,200,200,0.35)", line_width=1)
@@ -116,13 +179,14 @@ def construir_grafico_explicacion(explicacion: dict, top: int = 6) -> go.Figure:
                 f"<b>Por qué ese precio en {explicacion['ciudad']}</b><br>"
                 f"<span style='font-size:0.85em; color:#aaa;'>Alojamiento medio: "
                 f"{explicacion['precio_referencia_local']} {explicacion['moneda']} "
-                f"&rarr; recomendado: {explicacion['precio_local']} "
+                f"→ recomendado: {explicacion['precio_local']} "
                 f"{explicacion['moneda']}</span>"
             ),
         ),
-        xaxis=dict(title="Efecto sobre el precio (%)", gridcolor="#3a3a3a", zeroline=False),
-        yaxis=dict(gridcolor="#3a3a3a"),
-        margin=dict(l=10, r=40, t=80, b=10),
+        xaxis=dict(title="Efecto sobre el precio (%)", gridcolor="#3a3a3a",
+                   zeroline=False, range=[x_min, x_max], ticksuffix="%"),
+        yaxis=dict(gridcolor="#3a3a3a", automargin=True),
+        margin=dict(l=10, r=20, t=80, b=10),
         height=120 + 40 * len(etiquetas),
         showlegend=False,
     )
