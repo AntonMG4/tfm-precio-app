@@ -91,6 +91,10 @@ ETIQUETAS_GRAFICO = {
     "host_total_listings_count": "Anuncios del anfitrión",
     "has_response_rate": "Tasa de respuesta",
     "has_acceptance_rate": "Tasa de aceptación",
+    "total_reviews": "Reseñas",
+    "reviews_por_mes_activo": "Reseñas al mes",
+    "latitude": "Latitud",
+    "longitude": "Longitud",
 }
 
 TIPOS_ALOJAMIENTO = {
@@ -100,11 +104,18 @@ TIPOS_ALOJAMIENTO = {
     "Hotel room": "Hab. de hotel",
 }
 
-# Variables que se agrupan en una sola barra del gráfico
+# Variables que se agrupan en una sola barra del gráfico (al pasar el ratón
+# se muestra el desglose de cada una)
 GRUPOS_GRAFICO = {
     "Ubicación": ["latitude", "longitude"],
-    "Anuncio sin reseñas": ["total_reviews", "reviews_por_mes_activo"],
+    "Historial en la plataforma": [
+        "has_acceptance_rate", "has_response_rate",
+        "total_reviews", "reviews_por_mes_activo",
+    ],
 }
+
+# Variables cuyo valor no se muestra en el desglose (coordenadas con muchos decimales)
+SIN_VALOR = {"latitude", "longitude"}
 
 VERDE = "#43A047"
 ROJO = "#E53935"
@@ -121,19 +132,39 @@ def _formatear_valor(var, valor):
     return str(valor)
 
 
+def _etiqueta(var, valor):
+    nombre = ETIQUETAS_GRAFICO.get(var, var)
+    return nombre if var in SIN_VALOR else f"{nombre}: {_formatear_valor(var, valor)}"
+
+
+def _pct(efecto_log):
+    return (np.exp(efecto_log) - 1) * 100
+
+
 def _filas_explicacion(detalle):
-    """Convierte el detalle por variable en filas (etiqueta, efecto_log),
-    agrupando las variables de GRUPOS_GRAFICO en una sola fila."""
+    """Convierte el detalle por variable en filas {etiqueta, efecto_log, desglose},
+    agrupando las variables de GRUPOS_GRAFICO en una sola fila (con su desglose)."""
     en_grupo = {v: g for g, vs in GRUPOS_GRAFICO.items() for v in vs}
-    filas, acumulado = [], {g: 0.0 for g in GRUPOS_GRAFICO}
+    filas = []
+    grupos = {g: [] for g in GRUPOS_GRAFICO}
     for f in detalle.itertuples():
         if f.variable in en_grupo:
-            acumulado[en_grupo[f.variable]] += f.efecto_log
+            grupos[en_grupo[f.variable]].append((_etiqueta(f.variable, f.valor), f.efecto_log))
         else:
-            nombre = ETIQUETAS_GRAFICO.get(f.variable, f.variable)
-            filas.append((f"{nombre}: {_formatear_valor(f.variable, f.valor)}", f.efecto_log))
-    filas += list(acumulado.items())
-    return sorted(filas, key=lambda x: abs(x[1]), reverse=True)
+            filas.append({"etiqueta": _etiqueta(f.variable, f.valor),
+                          "efecto_log": f.efecto_log, "desglose": None})
+    for g, miembros in grupos.items():
+        if miembros:
+            filas.append({"etiqueta": g,
+                          "efecto_log": sum(l for _, l in miembros),
+                          "desglose": miembros})
+    return sorted(filas, key=lambda f: abs(f["efecto_log"]), reverse=True)
+
+
+def _texto_desglose(titulo, efecto_log, miembros):
+    miembros = sorted(miembros, key=lambda m: abs(m[1]), reverse=True)
+    lineas = "<br>".join(f"{e} ({_pct(l):+.1f}%)" for e, l in miembros)
+    return f"<b>{titulo} ({_pct(efecto_log):+.1f}%)</b><br>{lineas}"
 
 
 def construir_grafico_explicacion(explicacion: dict, top: int = 6) -> go.Figure:
@@ -141,20 +172,22 @@ def construir_grafico_explicacion(explicacion: dict, top: int = 6) -> go.Figure:
     filas = _filas_explicacion(explicacion["detalle"])
     principales, resto = filas[:top], filas[top:]
 
-    def pct(l):
-        return (np.exp(l) - 1) * 100
-
-    etiquetas = [e for e, _ in principales]
-    efectos = [pct(l) for _, l in principales]
-    # Texto al pasar el ratón: cada barra muestra su efecto; la de "resto"
-    # muestra además el desglose de las características que agrupa
-    detalles = [f"<b>{e}</b> ({pct(l):+.1f}%)" for e, l in principales]
+    etiquetas = [f["etiqueta"] for f in principales]
+    efectos = [_pct(f["efecto_log"]) for f in principales]
+    # Texto al pasar el ratón: las barras de grupo muestran su desglose; la de
+    # "resto" lista lo que agrupa (un grupo dentro del resto aparece como una línea)
+    detalles = [
+        _texto_desglose(f["etiqueta"], f["efecto_log"], f["desglose"]) if f["desglose"]
+        else f"<b>{f['etiqueta']}</b> ({_pct(f['efecto_log']):+.1f}%)"
+        for f in principales
+    ]
     if resto:
-        efecto_resto = pct(sum(l for _, l in resto))
+        log_resto = sum(f["efecto_log"] for f in resto)
         etiquetas.append("Resto de características")
-        efectos.append(efecto_resto)
-        desglose = "<br>".join(f"{e} ({pct(l):+.1f}%)" for e, l in resto)
-        detalles.append(f"<b>Resto de características ({efecto_resto:+.1f}%)</b><br>{desglose}")
+        efectos.append(_pct(log_resto))
+        detalles.append(_texto_desglose(
+            "Resto de características", log_resto,
+            [(f["etiqueta"], f["efecto_log"]) for f in resto]))
 
     # De menor a mayor efecto absoluto: Plotly pinta de abajo arriba,
     # así la barra más importante queda arriba
