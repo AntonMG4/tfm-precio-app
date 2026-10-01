@@ -6,9 +6,11 @@ modelo, con el tipo de control adecuado según su tipo ("categorica",
  
 Dos grupos de variables NO llevan campo de formulario propio:
 - `longitude`/`latitude`: las rellena el clic en el mapa (src/mapa.py).
-- `total_reviews`/`reviews_por_mes_activo`: son métricas del propio listing
-  (sus reseñas), y un listing nuevo tiene, por definición, 0 — no hace
-  falta preguntarlas, se fijan directamente.
+- `total_reviews`/`reviews_por_mes_activo`: no se piden tal cual. Se
+  preguntan dos datos sencillos en una sección opcional ("nº de reseñas" y
+  "meses desde la primera reseña") y se calculan a partir de ellos, con la
+  misma definición que en TFM_Clustering.qmd. Si se dejan a 0, el listing se
+  trata como nuevo (sin reseñas).
 """
  
 import json
@@ -27,10 +29,11 @@ CAMPOS_EXCLUIDOS_DEL_FORM = {"longitude", "latitude"}
 # engañosa para un anfitrión real. Se documenta en la memoria, no solo aquí.
 CIUDADES_EXCLUIDAS = {"Istanbul"}
  
-VALORES_FIJOS_LISTING_NUEVO = {
-    "total_reviews": 0,
-    "reviews_por_mes_activo": 0,
-}
+# Campos opcionales de reseñas (no son variables del modelo: a partir de
+# ellos se calculan total_reviews y reviews_por_mes_activo en leer_listing)
+CAMPO_N_RESENAS = "_n_resenas"
+CAMPO_MESES_RESENAS = "_meses_resenas"
+CAMPOS_RESENAS = [CAMPO_N_RESENAS, CAMPO_MESES_RESENAS]
  
 # Overrides del rango bruto del dataset, cuando ese rango no tiene sentido
 # para describir un listing nuevo. `minimum_nights` llega a 9999 en el
@@ -57,6 +60,9 @@ ETIQUETAS = {
 }
  
 # Texto de ayuda (aparece bajo la etiqueta en Gradio); solo donde aporta algo
+ETIQUETAS[CAMPO_N_RESENAS] = "Nº de reseñas recibidas"
+ETIQUETAS[CAMPO_MESES_RESENAS] = "Meses entre la primera y la última reseña"
+
 INFO = {
     "n_amenities": (
         "Cuenta wifi, cocina, parking, calefacción, TV, lavadora... todo lo "
@@ -69,6 +75,12 @@ INFO = {
     "has_acceptance_rate": (
         "El anfitrión ya tiene un histórico de aceptación de reservas."
     ),
+    CAMPO_N_RESENAS: (
+        "Déjalo en 0 si el anuncio es nuevo."
+    ),
+    CAMPO_MESES_RESENAS: (
+        "Solo si hay al menos 2 reseñas. 0 si todas son del mismo mes."
+    ),
 }
  
 # Agrupación visual del formulario: (título de sección, [variables])
@@ -78,7 +90,10 @@ GRUPOS_CAMPOS = [
     ("👤 Anfitrión", ["host_total_listings_count", "has_response_rate", "has_acceptance_rate"]),
 ]
  
-ORDEN_CAMPOS = [v for _, variables in GRUPOS_CAMPOS for v in variables]
+ORDEN_VARIABLES = [v for _, variables in GRUPOS_CAMPOS for v in variables]
+ORDEN_CAMPOS = ORDEN_VARIABLES + CAMPOS_RESENAS
+
+TITULO_SECCION_RESENAS = "📈 Si tu anuncio ya está publicado (opcional)"
  
  
 def cargar_metadatos(datos_dir: Path = DATOS) -> dict:
@@ -117,7 +132,7 @@ def construir_campos_agrupados(metadatos: dict | None = None) -> dict:
     if metadatos is None:
         metadatos = cargar_metadatos()
  
-    faltan = set(ORDEN_CAMPOS) - set(metadatos)
+    faltan = set(ORDEN_VARIABLES) - set(metadatos)
     if faltan:
         raise ValueError(f"GRUPOS_CAMPOS incluye variables sin metadatos: {faltan}")
  
@@ -126,7 +141,29 @@ def construir_campos_agrupados(metadatos: dict | None = None) -> dict:
         gr.Markdown(f"#### {titulo}", elem_classes="tfm-seccion")
         for var in variables:
             campos[var] = construir_campo(var, metadatos[var])
+
+    gr.Markdown(f"#### {TITULO_SECCION_RESENAS}", elem_classes="tfm-seccion")
+    campos[CAMPO_N_RESENAS] = gr.Number(
+        value=0, minimum=0, maximum=2000, step=1,
+        label=ETIQUETAS[CAMPO_N_RESENAS], info=INFO[CAMPO_N_RESENAS],
+    )
+    campos[CAMPO_MESES_RESENAS] = gr.Number(
+        value=0, minimum=0, maximum=200, step=1, interactive=False,
+        label=ETIQUETAS[CAMPO_MESES_RESENAS], info=INFO[CAMPO_MESES_RESENAS],
+    )
+    # Con 0 o 1 reseñas no hay intervalo entre la primera y la última:
+    # el campo de meses se desactiva y se pone a 0
+    campos[CAMPO_N_RESENAS].change(
+        fn=_actualizar_campo_meses,
+        inputs=[campos[CAMPO_N_RESENAS], campos[CAMPO_MESES_RESENAS]],
+        outputs=campos[CAMPO_MESES_RESENAS],
+    )
     return campos
+
+
+def _actualizar_campo_meses(n_resenas, meses):
+    activo = (n_resenas or 0) >= 2
+    return gr.Number(interactive=activo, value=meses if activo else 0)
  
  
 def leer_listing(valores: dict, lat: float, lon: float) -> dict:
@@ -138,6 +175,18 @@ def leer_listing(valores: dict, lat: float, lon: float) -> dict:
     listing = dict(valores)
     listing["latitude"] = lat
     listing["longitude"] = lon
-    listing.update(VALORES_FIJOS_LISTING_NUEVO)
+
+    # Reseñas: misma definición que en TFM_Clustering.qmd
+    #   meses_activo = meses entre la primera y la última reseña + 1
+    #   reviews_por_mes_activo = total_reviews / meses_activo
+    n_resenas = int(listing.pop(CAMPO_N_RESENAS, 0) or 0)
+    meses = int(listing.pop(CAMPO_MESES_RESENAS, 0) or 0)
+    listing["total_reviews"] = n_resenas
+    if n_resenas == 0:
+        listing["reviews_por_mes_activo"] = 0
+    elif n_resenas == 1:
+        # Una sola reseña: primera = última, meses_activo = 1
+        listing["reviews_por_mes_activo"] = 1.0
+    else:
+        listing["reviews_por_mes_activo"] = n_resenas / (meses + 1)
     return listing
- 
